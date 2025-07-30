@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Research Summarizer</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom font for better aesthetics */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light gray background */
+        }
+        .container {
+            max-width: 900px; /* Max width for content */
+        }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #3b82f6; /* Blue spinner */
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="container bg-white shadow-lg rounded-xl p-8 space-y-6 border border-gray-200">
+        <h1 class="text-4xl font-extrabold text-center text-gray-800 mb-6">
+            <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+                AI Research Summarizer
+            </span>
+        </h1>
+
+        <!-- Input Section -->
+        <div class="space-y-4">
+            <div>
+                <label for="topicInput" class="block text-lg font-semibold text-gray-700 mb-2">Research Topic:</label>
+                <input type="text" id="topicInput" placeholder="e.g., Learning Styles in High School Students"
+                       class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200 ease-in-out text-gray-800">
+            </div>
+            <div>
+                <label for="urlsInput" class="block text-lg font-semibold text-gray-700 mb-2">
+                    Article URLs (comma-separated, 3-5 links):
+                </label>
+                <textarea id="urlsInput" rows="5" placeholder="e.g., https://example.com/article1, https://example.com/article2"
+                          class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200 ease-in-out text-gray-800"></textarea>
+            </div>
+            <button id="summarizeBtn"
+                    class="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transform hover:scale-105 transition duration-300 ease-in-out text-xl flex items-center justify-center">
+                <span id="buttonText">Summarize Research</span>
+                <div id="loadingSpinner" class="loading-spinner ml-3 hidden"></div>
+            </button>
+        </div>
+
+        <!-- Output Section -->
+        <div id="outputSection" class="hidden mt-8 space-y-4">
+            <h2 class="text-2xl font-bold text-gray-800 border-b-2 pb-2">Summary:</h2>
+            <div id="summaryOutput" class="bg-gray-50 p-6 rounded-lg border border-gray-200 text-gray-800 leading-relaxed whitespace-pre-wrap">
+                <!-- Summary will be displayed here -->
+            </div>
+            <div id="errorMessage" class="text-red-600 font-medium hidden p-4 bg-red-50 rounded-lg border border-red-200">
+                <!-- Error messages will be displayed here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables provided by the Canvas environment (if applicable)
+        // These are included for completeness, though not directly used by this specific app's functionality
+        // as it doesn't involve Firebase Firestore or Auth.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // DOM Elements
+        const topicInput = document.getElementById('topicInput');
+        const urlsInput = document.getElementById('urlsInput');
+        const summarizeBtn = document.getElementById('summarizeBtn');
+        const buttonText = document.getElementById('buttonText');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const outputSection = document.getElementById('outputSection');
+        const summaryOutput = document.getElementById('summaryOutput');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // Mock content for simulating the 'browsing' tool.
+        // In a real application, this would involve a server-side web scraping service or a dedicated API.
+        const mockArticleContent = {
+            'https://example.com/learning-styles-1': `
+                Article 1: Visual, Auditory, Kinesthetic Learning Styles
+                This article discusses the three primary learning styles: Visual, Auditory, and Kinesthetic (VAK). Visual learners prefer seeing information, auditory learners prefer hearing it, and kinesthetic learners learn by doing. Understanding these styles can help educators tailor their teaching methods. However, it's important to note that most individuals exhibit a blend of these styles rather than a single dominant one. Effective teaching often involves incorporating elements that cater to all three.
+            `,
+            'https://example.com/high-school-pedagogy': `
+                Article 2: Pedagogical Approaches for High School Students
+                High school pedagogy often involves a mix of lectures, group work, and hands-on activities. The challenge lies in accommodating diverse student needs and learning preferences within a standardized curriculum. Teachers can use differentiated instruction to address varied learning styles, providing options for how students engage with content, process information, and demonstrate understanding. Technology integration also plays a crucial role in offering flexible learning pathways.
+            `,
+            'https://example.com/research-on-learning-styles': `
+                Article 3: The Debate on Learning Styles Efficacy
+                While popular, the scientific evidence supporting the direct correlation between teaching to specific learning styles and improved academic outcomes is limited. Many researchers argue that focusing on evidence-based teaching strategies that benefit all learners, such as spaced repetition, active recall, and multi-modal presentation of information, is more effective than strictly adhering to learning style theories. The concept of "learning styles" might be better viewed as "learning preferences."
+            `,
+            'https://example.com/student-engagement-strategies': `
+                Article 4: Boosting Student Engagement in Secondary Education
+                Engaging high school students requires active participation, relevance to real-world issues, and opportunities for collaboration. Incorporating project-based learning, debates, and interactive simulations can significantly increase student motivation. Providing choice and fostering a sense of autonomy also contributes to higher engagement levels. Understanding individual student interests and connecting curriculum to their lives is key.
+            `,
+            'https://example.com/cognitive-science-learning': `
+                Article 5: Cognitive Science Principles for Effective Learning
+                Modern cognitive science emphasizes principles like working memory limitations, long-term memory consolidation, and the importance of prior knowledge. Effective learning strategies are those that align with how the brain naturally processes and stores information. This includes breaking down complex topics, providing clear explanations, encouraging self-explanation, and regular retrieval practice, which are beneficial across all learners regardless of their "style."
+            `
+        };
+
+        /**
+         * Simulates fetching content from a URL.
+         * In a real application, this would be a server-side call to a web scraping tool
+         * or a dedicated browsing API. For this demonstration, it retrieves content from
+         * a predefined mock data object.
+         * @param {string} url The URL to "browse".
+         * @returns {Promise<string>} A promise that resolves with the article content or an error message.
+         */
+        async function simulateBrowse(url) {
+            return new Promise(resolve => {
+                setTimeout(() => { // Simulate network delay for a more realistic feel
+                    const content = mockArticleContent[url.trim()];
+                    if (content) {
+                        resolve(content);
+                    } else {
+                        // Return an error message if the URL is not in our mock data
+                        resolve(`Failed to fetch content from ${url}. (Mock data not found)`);
+                    }
+                }, 500); // 500ms delay
+            });
+        }
+
+        /**
+         * Clears any previously displayed output and error messages, and hides the output section.
+         */
+        function clearOutput() {
+            summaryOutput.innerHTML = ''; // Clear summary text
+            errorMessage.innerHTML = '';  // Clear error message
+            outputSection.classList.add('hidden'); // Hide the entire output section
+            errorMessage.classList.add('hidden'); // Ensure error message is hidden
+        }
+
+        /**
+         * Displays an error message to the user in the designated error area.
+         * Also ensures the output section is visible to show the error.
+         * @param {string} message The error message to display.
+         */
+        function displayError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden'); // Show the error message
+            outputSection.classList.remove('hidden'); // Ensure output section is visible
+            summaryOutput.innerHTML = ''; // Clear summary if an error occurs
+        }
+
+        /**
+         * Handles the entire summarization process when the "Summarize Research" button is clicked.
+         * This includes input validation, content fetching (simulated), LLM interaction,
+         * and displaying the results or errors.
+         */
+        summarizeBtn.addEventListener('click', async () => {
+            clearOutput(); // Start with a clean slate
+
+            const topic = topicInput.value.trim();
+            const urlsString = urlsInput.value.trim();
+
+            // Input validation
+            if (!topic) {
+                displayError('Please enter a research topic.');
+                return;
+            }
+            if (!urlsString) {
+                displayError('Please enter at least one URL.');
+                return;
+            }
+
+            // Parse URLs from the comma-separated string
+            const urls = urlsString.split(',').map(url => url.trim()).filter(url => url);
+
+            if (urls.length < 1 || urls.length > 5) {
+                displayError('Please provide between 1 and 5 URLs for summarization.');
+                return;
+            }
+
+            // Show loading state in the UI
+            summarizeBtn.disabled = true; // Disable button to prevent multiple clicks
+            buttonText.textContent = 'Summarizing...'; // Change button text
+            loadingSpinner.classList.remove('hidden'); // Show loading spinner
+            outputSection.classList.remove('hidden'); // Make output section visible to prepare for content/error
+
+            let aggregatedContent = '';
+            const fetchedContents = [];
+
+            // Step 1: Fetch Content from URLs (simulated)
+            // Iterate through each URL and attempt to get its content
+            for (const url of urls) {
+                try {
+                    const content = await simulateBrowse(url);
+                    if (content.startsWith('Failed to fetch')) {
+                        // If mock data indicates failure, note it
+                        fetchedContents.push(`[Content from ${url} could not be fetched: ${content}]`);
+                    } else {
+                        // Otherwise, add the content with a clear separator
+                        fetchedContents.push(`--- Article from ${url} ---\n${content}\n`);
+                    }
+                } catch (error) {
+                    // Catch any unexpected errors during the simulated browse
+                    fetchedContents.push(`[Error fetching content from ${url}: ${error.message}]`);
+                }
+            }
+            // Combine all fetched contents into a single string for the LLM
+            aggregatedContent = fetchedContents.join('\n\n');
+
+            // If no content was successfully retrieved, show an error
+            if (!aggregatedContent.trim()) {
+                displayError('Could not retrieve any meaningful content from the provided URLs. Please check them and try again.');
+                // Reset loading state before returning
+                summarizeBtn.disabled = false;
+                buttonText.textContent = 'Summarize Research';
+                loadingSpinner.classList.add('hidden');
+                return;
+            }
+
+            // Step 2: Summarize with LLM (Google Gemini API)
+            try {
+                let chatHistory = [];
+                // Construct the prompt for the LLM
+                const prompt = `Given the following articles on the topic of '${topic}', please provide a concise summary in bullet points. Focus on key findings, main arguments, and important takeaways. Ensure the summary is easy to understand and highlights different perspectives if present. If an article is irrelevant or fails to load, mention it briefly or exclude its content from the summary.
+
+                Articles Content:
+                ---START OF CONTENT---
+                ${aggregatedContent}
+                ---END OF CONTENT---
+
+                Please format your response as a bulleted list.`;
+
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+
+                const payload = { contents: chatHistory };
+                // The API key is automatically provided by the Canvas environment at runtime
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+                let response;
+                let result;
+                let retries = 0;
+                const maxRetries = 3;
+                const initialDelay = 1000; // Initial delay for exponential backoff (1 second)
+
+                // Implement exponential backoff for robust API calls
+                while (retries < maxRetries) {
+                    try {
+                        response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (response.ok) {
+                            result = await response.json();
+                            break; // API call successful, exit retry loop
+                        } else if (response.status === 429) { // Too Many Requests (Rate Limit)
+                            const delay = initialDelay * Math.pow(2, retries);
+                            console.warn(`Rate limit hit. Retrying in ${delay / 1000} seconds...`);
+                            await new Promise(resolve => setTimeout(resolve, delay)); // Wait before retrying
+                            retries++;
+                        } else {
+                            // Handle other non-OK HTTP responses
+                            const errorData = await response.json();
+                            throw new Error(`API Error: ${response.status} - ${errorData.error.message || response.statusText}`);
+                        }
+                    } catch (error) {
+                        // Catch network errors or other fetch-related issues
+                        if (retries === maxRetries - 1) { // If it's the last retry and it failed
+                            throw error; // Re-throw the error to be caught by the outer catch block
+                        }
+                        const delay = initialDelay * Math.pow(2, retries);
+                        console.warn(`Fetch error: ${error.message}. Retrying in ${delay / 1000} seconds...`);
+                        await new Promise(resolve => setTimeout(resolve, delay)); // Wait before retrying
+                        retries++;
+                    }
+                }
+
+                // Validate the structure of the AI model's response
+                if (!result || !result.candidates || result.candidates.length === 0 ||
+                    !result.candidates[0].content || !result.candidates[0].content.parts ||
+                    result.candidates[0].content.parts.length === 0) {
+                    throw new Error('Invalid or empty response from AI model. Please try again.');
+                }
+
+                const summaryText = result.candidates[0].content.parts[0].text;
+                summaryOutput.textContent = summaryText; // Display the summary
+                outputSection.classList.remove('hidden'); // Ensure the output section is visible
+
+            } catch (error) {
+                console.error('Error during summarization:', error);
+                displayError(`Failed to generate summary: ${error.message}. This might be due to an issue with the AI service or network.`);
+            } finally {
+                // Always reset the UI state regardless of success or failure
+                summarizeBtn.disabled = false;
+                buttonText.textContent = 'Summarize Research';
+                loadingSpinner.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
